@@ -47,6 +47,10 @@ import com.kaltura.playersdk.types.PlayerStates;
  * Created by michalradwantzor on 9/24/13.
  */
 public class PlayerViewController extends RelativeLayout {
+
+    public static final String PLAYER_USER_AGENT = "kalturaNativeCordovaPlayer";
+
+
     public static String TAG = "PlayerViewController";
     public static String DEFAULT_HOST = "http://cdnbakmi.kaltura.com";
     public static String DEFAULT_HTML5_URL = "/html5/html5lib/v2.1.1/mwEmbedFrame.php";
@@ -56,8 +60,9 @@ public class PlayerViewController extends RelativeLayout {
     private PlayerView mPlayerView;
     private WebView mWebView;
     private RelativeLayout mBackgroundRL;
-    private double mCurSec;
+    private double mCurrentSecond;
     private Activity mActivity;
+    private Context mContext;
     private double mDuration = 0;
     private OnToggleFullScreenListener mFSListener;
     private HashMap<String, ArrayList<KPlayerEventListener>> mKplayerEventsMap = new HashMap<String, ArrayList<KPlayerEventListener>>();
@@ -196,43 +201,55 @@ public class PlayerViewController extends RelativeLayout {
     }
 
     /**
-     * load given url to the player view
-     * 
-     * @param iframeUrl
-     *            url to payer
-     * @param activity
-     *            bounding activity
+     * Loads a given Kaltura Video URL into the video player.
+     *
+     * @param iframeUrl The URL to be displayed in the iframe
+     * @param activity The activity that this PlayerViewController is bound to
      */
-    public void addComponents(String iframeUrl, Activity activity) {	
+    public void addComponents(String iframeUrl, Activity activity) {
+        // Storing activity + context
         mActivity = activity;
-        mWebView= new WebView(mActivity);
-        mCurSec = 0;
-        ViewGroup.LayoutParams currLP = getLayoutParams();
-        LayoutParams wvLp = new LayoutParams(currLP.width, currLP.height);
-        
-        mBackgroundRL = new RelativeLayout(activity);
-        mBackgroundRL.setBackgroundColor(Color.BLACK);
-        this.addView(mBackgroundRL,currLP);
+        mContext = activity.getApplicationContext();
 
-        mPlayerView = new PlayerView(mActivity);
-        LayoutParams lp = new LayoutParams(currLP.width, currLP.height);
+        // Creating a Webview instance
+        mWebView= new WebView(mContext);
+        mCurrentSecond = 0;
+
+        // Preparing layout params to make the webview fill this view
+        ViewGroup.LayoutParams currentLayoutParams = getLayoutParams();
+        LayoutParams webViewLayoutParams = new LayoutParams(currentLayoutParams.width, currentLayoutParams.height);
+
+        // Creating a background RelativeLayout
+        mBackgroundRL = new RelativeLayout(mContext);
+        mBackgroundRL.setBackgroundColor(Color.BLACK);
+        this.addView(mBackgroundRL, currentLayoutParams);
+
+        // Creating a PlayerView
+        mPlayerView = new PlayerView(mContext);
+        LayoutParams lp = new LayoutParams(currentLayoutParams.width, currentLayoutParams.height);
         this.addView(mPlayerView, lp);
-        
+
+        // Applying listeners
         mVideoInterface = mPlayerView;
         setPlayerListeners();
         createPlayerInstance();
-        
-        this.addView(mWebView, wvLp);
+
+        // Adding the WebView to this RelativeLayout
+        this.addView(mWebView, webViewLayoutParams);
+
+        // Preparing the WebView
         mWebView.getSettings().setJavaScriptEnabled(true);
         mWebView.setWebViewClient(new CustomWebViewClient());
         mWebView.setWebChromeClient(new WebChromeClient());
         mWebView.getSettings().setUserAgentString(
                 mWebView.getSettings().getUserAgentString()
-                        + " kalturaNativeCordovaPlayer");
+                        + PLAYER_USER_AGENT);
+
         if (Build.VERSION.SDK_INT >= 11) {
             mWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         }
 
+        // Loading the URL
         mWebView.loadUrl(iframeUrl);
         mWebView.setBackgroundColor(0);
     }
@@ -252,7 +269,7 @@ public class PlayerViewController extends RelativeLayout {
     	} else {
     		mVideoInterface = mPlayerView;
     	}
-    	mVideoInterface.setStartingPoint( (int) (mCurSec * 1000) );
+    	mVideoInterface.setStartingPoint( (int) (mCurrentSecond * 1000) );
 		setPlayerListeners();
     }
 
@@ -275,7 +292,7 @@ public class PlayerViewController extends RelativeLayout {
     
     public void savePlaybackPosition() {
     	if ( mVideoInterface!= null ) {
-    		mVideoInterface.setStartingPoint( (int) (mCurSec * 1000) );
+    		mVideoInterface.setStartingPoint( (int) (mCurrentSecond * 1000) );
     	}
     }
 
@@ -466,7 +483,7 @@ public class PlayerViewController extends RelativeLayout {
         final Runnable runUpdatePlayehead = new Runnable() {
             @Override
             public void run() {               
-                notifyKPlayer( "trigger", new Object[]{ "timeupdate", mCurSec});
+                notifyKPlayer( "trigger", new Object[]{ "timeupdate", mCurrentSecond});
             }
         };
 
@@ -476,7 +493,7 @@ public class PlayerViewController extends RelativeLayout {
             public void onPlayheadUpdated(int msec) {
             	double curSec = msec / 1000.0;
             	if ( curSec <= mDuration ) {
-            		mCurSec = curSec;
+            		mCurrentSecond = curSec;
             		 mActivity.runOnUiThread(runUpdatePlayehead);
             	}
             	//device is sleeping, pause player
@@ -617,7 +634,7 @@ public class PlayerViewController extends RelativeLayout {
             	} else {
             		if (mVideoInterface.canPause()) {
                         mVideoInterface.pause();
-                        mVideoInterface.setStartingPoint((int) (mCurSec * 1000));
+                        mVideoInterface.setStartingPoint((int) (mCurrentSecond * 1000));
                     }
             		Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse( url ));
             		mActivity.startActivity(browserIntent);
