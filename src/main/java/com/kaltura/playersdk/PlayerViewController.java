@@ -127,7 +127,7 @@ public class PlayerViewController extends RelativeLayout {
         };
         mainHandler.post(myRunnable);
     }
-    
+
     public void setActivity( Activity activity ) {
     	mActivity = activity;      
     }
@@ -213,7 +213,6 @@ public class PlayerViewController extends RelativeLayout {
 
         // Creating a Webview instance
         mWebView= new WebView(mContext);
-        mCurrentSecond = 0;
 
         // Preparing layout params to make the webview fill this view
         ViewGroup.LayoutParams currentLayoutParams = getLayoutParams();
@@ -730,4 +729,19 @@ public class PlayerViewController extends RelativeLayout {
         }
 
     }
+
+    // =======================================
+    // ========== Getters + Setters ==========
+    // =======================================
+
+    public double getCurrentSecond()
+    {
+        return mCurrentSecond;
+    }
+
+    public void setCurrentSecond(double currentSecond)
+    {
+        mCurrentSecond = currentSecond;
+    }
+
 }
