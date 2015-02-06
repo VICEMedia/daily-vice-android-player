@@ -52,7 +52,7 @@ public class PlayerViewController extends RelativeLayout {
 
     public static String TAG = "PlayerViewController";
     public static String HOST = "http://cdnbakmi.kaltura.com/";
-    public static String HTML5_URL = "/html5/html5lib/v2.26/mwEmbedFrame.php";
+    public static String HTML5_URL = "/html5/html5lib/v2.8/mwEmbedFrame.php";
     public static String PLAYER_ID = "28041001";
 
     private VideoPlayerInterface mVideoInterface;
