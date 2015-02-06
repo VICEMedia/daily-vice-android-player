@@ -51,9 +51,9 @@ public class PlayerViewController extends RelativeLayout {
     public static final String PLAYER_USER_AGENT = "kalturaNativeCordovaPlayer";
 
     public static String TAG = "PlayerViewController";
-    public static String DEFAULT_HOST = "http://www.kaltura.com"; // TODO changed from http://cdnbakmi.kaltura.com/
-    public static String DEFAULT_HTML5_URL = "/html5/html5lib/v2.1.1/mwEmbedFrame.php";
-    public static String DEFAULT_PLAYER_ID = "21384602";
+    public static String HOST = "http://cdnbakmi.kaltura.com/";
+    public static String HTML5_URL = "/html5/html5lib/v2.26/mwEmbedFrame.php";
+    public static String PLAYER_ID = "28041001";
 
     private VideoPlayerInterface mVideoInterface;
     private PlayerView mPlayerView;
@@ -67,11 +67,7 @@ public class PlayerViewController extends RelativeLayout {
     private HashMap<String, ArrayList<KPlayerEventListener>> mKplayerEventsMap = new HashMap<String, ArrayList<KPlayerEventListener>>();
     private HashMap<String, KPlayerEventListener> mKplayerEvaluatedMap = new HashMap<String, KPlayerEventListener>();
     private KPlayerJsCallbackReadyListener mJsReadyListener;
-    
-    public String host = DEFAULT_HOST;
-    public String html5Url = DEFAULT_HTML5_URL;
-    public String playerId = DEFAULT_PLAYER_ID;
-    
+
     private String mVideoUrl;
     private String mVideoTitle = "";
     private String mThumbUrl ="";
@@ -194,9 +190,18 @@ public class PlayerViewController extends RelativeLayout {
      * @param entryId entry ID
      * @param activity bounding activity
      */
-    public void addComponents(String partnerId, String entryId, Activity activity) {
-        String iframeUrl = host + html5Url + "?wid=_" + partnerId + "&uiconf_id=" + playerId + "&entry_id=" + entryId;
-        addComponents( iframeUrl, activity );
+    public void addComponents(String partnerId, String entryId, Activity activity)
+    {
+        String iframeUrl = HOST + HTML5_URL
+            + "/p/" + partnerId
+            + "/uiconf_id/" + PLAYER_ID
+            + "/entry_id/" + entryId
+            + "?wid=_" + partnerId
+            + "&iframeembed=true"
+            + "&playerId=kaltura_player"
+            + "&entry_id=" + entryId;
+
+        addComponents(iframeUrl, activity);
     }
 
     /**
