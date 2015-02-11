@@ -32,6 +32,7 @@ import android.widget.RelativeLayout;
 import com.kaltura.playersdk.chromecast.CastPlayer;
 import com.kaltura.playersdk.events.KPlayerEventListener;
 import com.kaltura.playersdk.events.KPlayerJsCallbackReadyListener;
+import com.kaltura.playersdk.events.LayoutReadyListener;
 import com.kaltura.playersdk.events.OnCastDeviceChangeListener;
 import com.kaltura.playersdk.events.OnCastRouteDetectedListener;
 import com.kaltura.playersdk.events.OnPlayerStateChangeListener;
@@ -67,6 +68,7 @@ public class PlayerViewController extends RelativeLayout {
     private HashMap<String, ArrayList<KPlayerEventListener>> mKplayerEventsMap = new HashMap<String, ArrayList<KPlayerEventListener>>();
     private HashMap<String, KPlayerEventListener> mKplayerEvaluatedMap = new HashMap<String, KPlayerEventListener>();
     private KPlayerJsCallbackReadyListener mJsReadyListener;
+    private LayoutReadyListener mLayoutReadyListener;
 
     private String mVideoUrl;
     private String mVideoTitle = "";
@@ -272,7 +274,7 @@ public class PlayerViewController extends RelativeLayout {
     	} else {
     		mVideoInterface = mPlayerView;
     	}
-    	mVideoInterface.setStartingPoint( (int) (mCurrentSecond * 1000) );
+        mVideoInterface.setStartingPoint( (int) (mCurrentSecond * 1000) );
 		setPlayerListeners();
     }
 
@@ -295,7 +297,7 @@ public class PlayerViewController extends RelativeLayout {
     
     public void savePlaybackPosition() {
     	if ( mVideoInterface!= null ) {
-    		mVideoInterface.setStartingPoint( (int) (mCurrentSecond * 1000) );
+    		mVideoInterface.setStartingPoint((int) (mCurrentSecond * 1000));
     	}
     }
 
@@ -355,6 +357,10 @@ public class PlayerViewController extends RelativeLayout {
     // /////////////////////////////////////////////////////////////////////////////////////////////
     public void registerJsCallbackReady( KPlayerJsCallbackReadyListener listener ) {
     	mJsReadyListener = listener;
+    }
+
+    public void registerLayoutReadyListener( LayoutReadyListener listener ) {
+        mLayoutReadyListener = listener;
     }
     
     public void sendNotification(String noteName, JSONObject noteBody) {
@@ -511,8 +517,8 @@ public class PlayerViewController extends RelativeLayout {
             @Override
             public void onProgressUpdate(int progress) {
                 double percent = progress / 100.0;
-                notifyKPlayer( "trigger", new Object[]{ "progress", percent});
- 
+                notifyKPlayer("trigger", new Object[]{"progress", percent});
+
             }
         });
     }
@@ -530,11 +536,14 @@ public class PlayerViewController extends RelativeLayout {
                         String action = arr[1];
 
                         if (action.equals("notifyJsReady")) {
-                        	if ( mJsReadyListener != null ) {
+                            if ( mJsReadyListener != null ) {
                         		mJsReadyListener.jsCallbackReady();
                         	}
                         }
-                        else if (action.equals("notifyLayoutReady")) {   
+                        else if (action.equals("notifyLayoutReady")) {
+                            if( mLayoutReadyListener != null ) {
+                                mLayoutReadyListener.onLayoutReady();
+                            }
                         	setChromecastVisiblity();
                         	return true;
                         }
