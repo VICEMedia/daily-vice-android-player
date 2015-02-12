@@ -93,6 +93,18 @@ public class PlayerViewController extends RelativeLayout {
         super(context, attrs, defStyle);
         setupPlayerViewController( context );
     }
+
+    public void setVideoVisible(boolean visible)
+    {
+        if(visible)
+        {
+            mPlayerView.setVisibility(View.VISIBLE);
+        }
+        else
+        {
+            mPlayerView.setVisibility(View.GONE);
+        }
+    }
     
     private void setupPlayerViewController( final Context context) {
         mPowerManager = (PowerManager) context.getSystemService(context.POWER_SERVICE);
