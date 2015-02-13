@@ -94,18 +94,6 @@ public class PlayerViewController extends RelativeLayout {
         setupPlayerViewController( context );
     }
 
-    public void setVideoVisible(boolean visible)
-    {
-        if(visible)
-        {
-            mPlayerView.setVisibility(View.VISIBLE);
-        }
-        else
-        {
-            mPlayerView.setVisibility(View.GONE);
-        }
-    }
-    
     private void setupPlayerViewController( final Context context) {
         mPowerManager = (PowerManager) context.getSystemService(context.POWER_SERVICE);
      // Get a handler that can be used to post to the main thread
