@@ -54,7 +54,8 @@ public class PlayerViewController extends RelativeLayout {
     public static String TAG = "PlayerViewController";
     public static String HOST = "http://cdnbakmi.kaltura.com";
     public static String HTML5_URL = "/html5/html5lib/v2.26/mwEmbedFrame.php";
-    public static String PLAYER_ID = "28041001";
+    public static String PRIMARY_PLAYER_ID = "28336441";
+    public static String SECONDARY_PLAYER_ID = "28041001";
 
     private VideoPlayerInterface mVideoInterface;
     private PlayerView mPlayerView;
@@ -192,11 +193,21 @@ public class PlayerViewController extends RelativeLayout {
      * @param entryId entry ID
      * @param activity bounding activity
      */
-    public void addComponents(String partnerId, String entryId, Activity activity)
+    public void addComponents(String partnerId, String entryId, Activity activity, boolean isPrimaryPlayer)
     {
+        String playerID;
+        if(isPrimaryPlayer)
+        {
+            playerID = PRIMARY_PLAYER_ID;
+        }
+        else
+        {
+            playerID = SECONDARY_PLAYER_ID;
+        }
+
         String iframeUrl = HOST + HTML5_URL
             + "/p/" + partnerId
-            + "/uiconf_id/" + PLAYER_ID
+            + "/uiconf_id/" + playerID
             + "/entry_id/" + entryId
             + "?wid=_" + partnerId
             + "&iframeembed=true"
