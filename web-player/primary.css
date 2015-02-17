@@ -1,0 +1,14 @@
+/* clear out the font based icon */
+.largePlayBtn.icon-play:before {
+    content: "";
+}
+/* replace play button with daily vice overlay */
+.mwPlayerContainer .largePlayBtn, .mwPlayerContainer .largePlayBtn:hover{
+    background-image: url('img/daily-vice-overlay.png');
+    background-size: 300px 70px;
+    width: 300px;
+    height: 70px;
+    padding: 0px;
+    margin-left: -150px; /* Half the width */
+    border-radius: 0px;
+}
