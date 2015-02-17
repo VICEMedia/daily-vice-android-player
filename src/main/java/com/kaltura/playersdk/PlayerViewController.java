@@ -554,6 +554,7 @@ public class PlayerViewController extends RelativeLayout {
                         else if (action.equals("notifyLayoutReady")) {
                             if( mLayoutReadyListener != null ) {
                                 mLayoutReadyListener.onLayoutReady();
+                                mLayoutReadyListener = null;
                             }
                         	setChromecastVisiblity();
                         	return true;
