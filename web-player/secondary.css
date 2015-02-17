@@ -1,0 +1,13 @@
+/* clear out the font based icon */
+.largePlayBtn.icon-play:before {
+    content: "";
+}
+/* replace play button with play */
+.mwPlayerContainer .largePlayBtn, .mwPlayerContainer .largePlayBtn:hover{
+    background-image: url('img/play-overlay.png');
+    background-size: 80px 90px;
+    width:80px;
+    height:90px;
+    padding: 0px;
+    border-radius: 0px;
+}
