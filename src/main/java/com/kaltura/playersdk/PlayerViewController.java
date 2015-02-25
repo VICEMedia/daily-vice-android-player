@@ -439,7 +439,10 @@ public class PlayerViewController extends RelativeLayout {
                 		if ( eventValues[i] instanceof String ) {
                 			values += "'" + eventValues[i] + "'";
                 		} else {
-                			values += eventValues[i].toString();
+                            if(eventValues[i] != null)
+                            {
+                                values += eventValues[i].toString();
+                            }
                 		}
             			if ( i < eventValues.length - 1 ) {
             				values += ", ";
