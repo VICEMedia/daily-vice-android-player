@@ -7,3 +7,7 @@
 
 You're probably going to have to update the CSS files to make sure they're pointing to the correct images after hosting them.
 
+# S3
+
+These files are currently hosted on S3 at https://s3.amazonaws.com/daily-vice/player/
+
