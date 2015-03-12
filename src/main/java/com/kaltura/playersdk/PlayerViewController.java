@@ -52,8 +52,8 @@ public class PlayerViewController extends RelativeLayout {
     public static final String PLAYER_USER_AGENT = "kalturaNativeCordovaPlayer";
 
     public static String TAG = "PlayerViewController";
-    public static String HOST = "http://cdnbakmi.kaltura.com";
-    public static String HTML5_URL = "/html5/html5lib/v2.26/mwEmbedFrame.php";
+    public static String HOST = "http://kgit.html5video.org";
+    public static String HTML5_URL = "/tags/v2.26.2/mwEmbedFrame.php";
     public static String PRIMARY_PLAYER_ID = "28336441";
     public static String SECONDARY_PLAYER_ID = "28041001";
 
