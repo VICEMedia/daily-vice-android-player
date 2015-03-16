@@ -1,5 +1,6 @@
 package com.kaltura.playersdk;
 
+import java.lang.reflect.Method;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -10,17 +11,21 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Point;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.PowerManager;
 import android.util.AttributeSet;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.BounceInterpolator;
@@ -50,6 +55,7 @@ import com.kaltura.playersdk.types.PlayerStates;
 public class PlayerViewController extends RelativeLayout {
 
     public static final String PLAYER_USER_AGENT = "kalturaNativeCordovaPlayer";
+    public static int CONTROL_BAR_HEIGHT = 58;
 
     public static String TAG = "PlayerViewController";
     public static String HOST = "http://kgit.html5video.org";
@@ -138,7 +144,37 @@ public class PlayerViewController extends RelativeLayout {
     public void setOnFullScreenListener(OnToggleFullScreenListener listener) {
         mFSListener = listener;
     }
-    
+
+    @SuppressLint("NewApi")
+    private Point getRealScreenSize()
+    {
+        Display display = mActivity.getWindowManager().getDefaultDisplay();
+        int realWidth = 0;
+        int realHeight = 0;
+
+        if (Build.VERSION.SDK_INT >= 17)
+        {
+            DisplayMetrics realMetrics = new DisplayMetrics();
+            display.getRealMetrics(realMetrics);
+            realWidth = realMetrics.widthPixels;
+            realHeight = realMetrics.heightPixels;
+        }
+        else
+        {
+            try {
+                Method mGetRawH = Display.class.getMethod("getRawHeight");
+                Method mGetRawW = Display.class.getMethod("getRawWidth");
+                realWidth = (Integer) mGetRawW.invoke(display);
+                realHeight = (Integer) mGetRawH.invoke(display);
+            } catch (Exception e) {
+                realWidth = display.getWidth();
+                realHeight = display.getHeight();
+                Log.e("Display Info", "Couldn't use reflection to get the real display metrics.");
+            }
+        }
+        return new Point(realWidth,realHeight);
+    }
+
     public void setPlayerViewDimensions(int width, int height, int xPadding, int yPadding) {
     	setPadding(xPadding, yPadding, 0, 0);
     	int newWidth = width + xPadding;
@@ -169,10 +205,15 @@ public class PlayerViewController extends RelativeLayout {
          		plp.addRule(CENTER_IN_PARENT, 0);
          	}
          	updateViewLayout(mPlayerView, plp);
+
+            LayoutParams wvLp = (LayoutParams) ((View) mVideoInterface).getLayoutParams();
+            float scale = mActivity.getResources().getDisplayMetrics().density;
+            wvLp.height =  getRealScreenSize().y - (int) ( CONTROL_BAR_HEIGHT * scale + 0.5f);
+            wvLp.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            updateViewLayout((View)mVideoInterface, wvLp);
     	 }
   
         invalidate();
-    	
     }
 
     public void setPlayerViewDimensions(int width, int height) {
