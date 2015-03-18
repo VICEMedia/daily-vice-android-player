@@ -4,7 +4,7 @@
 }
 /* replace play button with daily vice overlay */
 .mwPlayerContainer .largePlayBtn, .mwPlayerContainer .largePlayBtn:hover{
-    background-image: url('img/daily-vice-overlay.png');
+    background-image: url('../img/daily-vice-overlay.png');
     position: absolute;
     top: 0;
     left: 0;

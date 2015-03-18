@@ -4,7 +4,7 @@
 }
 /* replace play button with play */
 .mwPlayerContainer .largePlayBtn, .mwPlayerContainer .largePlayBtn:hover{
-    background-image: url('img/play-overlay.png');
+    background-image: url('../img/play-overlay.png');
     position: absolute;
     top: 0;
     left: 0;
