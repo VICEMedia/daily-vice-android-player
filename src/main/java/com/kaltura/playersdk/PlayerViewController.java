@@ -60,8 +60,13 @@ public class PlayerViewController extends RelativeLayout {
     public static String TAG = "PlayerViewController";
     public static String HOST = "http://kgit.html5video.org";
     public static String HTML5_URL = "/tags/v2.26.2/mwEmbedFrame.php";
+
+    // ===== Players =====
+    public static String LOCALE_FRENCH = "fr";
     public static String PRIMARY_PLAYER_ID = "28336441";
+    public static String PRIMARY_PLAYER_FRENCH_ID = "28809511";
     public static String SECONDARY_PLAYER_ID = "28041001";
+    // ===================
 
     private VideoPlayerInterface mVideoInterface;
     private PlayerView mPlayerView;
@@ -234,12 +239,19 @@ public class PlayerViewController extends RelativeLayout {
      * @param entryId entry ID
      * @param activity bounding activity
      */
-    public void addComponents(String partnerId, String entryId, Activity activity, boolean isPrimaryPlayer)
+    public void addComponents(String partnerId, String entryId, Activity activity, boolean isPrimaryPlayer, String locale)
     {
         String playerID;
         if(isPrimaryPlayer)
         {
-            playerID = PRIMARY_PLAYER_ID;
+            if(locale.equals(LOCALE_FRENCH))
+            {
+                playerID = PRIMARY_PLAYER_FRENCH_ID;
+            }
+            else
+            {
+                playerID = PRIMARY_PLAYER_ID;
+            }
         }
         else
         {
