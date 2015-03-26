@@ -74,7 +74,6 @@ public class PlayerViewController extends RelativeLayout {
     private RelativeLayout mBackgroundRL;
     private double mCurrentSecond;
     private Activity mActivity;
-    private Context mContext;
     private double mDuration = 0;
     private OnToggleFullScreenListener mFSListener;
     private HashMap<String, ArrayList<KPlayerEventListener>> mKplayerEventsMap = new HashMap<String, ArrayList<KPlayerEventListener>>();
@@ -279,22 +278,21 @@ public class PlayerViewController extends RelativeLayout {
     public void addComponents(String iframeUrl, Activity activity) {
         // Storing activity + context
         mActivity = activity;
-        mContext = activity.getApplicationContext();
 
         // Creating a Webview instance
-        mWebView= new WebView(mContext);
+        mWebView= new WebView(mActivity);
 
         // Preparing layout params to make the webview fill this view
         ViewGroup.LayoutParams currentLayoutParams = getLayoutParams();
         LayoutParams webViewLayoutParams = new LayoutParams(currentLayoutParams.width, currentLayoutParams.height);
 
         // Creating a background RelativeLayout
-        mBackgroundRL = new RelativeLayout(mContext);
+        mBackgroundRL = new RelativeLayout(mActivity);
         mBackgroundRL.setBackgroundColor(Color.BLACK);
         this.addView(mBackgroundRL, currentLayoutParams);
 
         // Creating a PlayerView
-        mPlayerView = new PlayerView(mContext);
+        mPlayerView = new PlayerView(mActivity);
         LayoutParams lp = new LayoutParams(currentLayoutParams.width, currentLayoutParams.height);
         this.addView(mPlayerView, lp);
 
