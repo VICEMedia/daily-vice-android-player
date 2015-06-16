@@ -574,8 +574,6 @@ public class PlayerViewController extends RelativeLayout {
 
                 double curSec = msec / 1000.0;
 
-                Log.d("DAILYVICETEST", "onPlayheadUpdated VIDEO?: " + msec + " progress: " + (curSec/mDuration)*100 + "%");
-
                 if (mProgressTracker != null){
                     mProgressTracker.receiveProgress((curSec / mDuration) * 100);
                 }
@@ -594,7 +592,6 @@ public class PlayerViewController extends RelativeLayout {
         mVideoInterface.registerProgressUpdate(new OnProgressListener() {
             @Override
             public void onProgressUpdate(int progress) {
-                Log.d("DAILYVICETEST", "onProgressUpdate VIDEO?: " + progress);
                 double percent = progress / 100.0;
                 notifyKPlayer("trigger", new Object[]{"progress", percent});
 
