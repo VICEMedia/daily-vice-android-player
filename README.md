@@ -1,4 +1,4 @@
-# Daily Vice Android Player
+# DAILY VICE Android Player
 
 This is the video player that is used in https://github.com/carrot/daily-vice-android
 

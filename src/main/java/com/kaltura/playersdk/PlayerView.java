@@ -4,6 +4,7 @@ import android.content.Context;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Handler;
+import android.util.Log;
 import android.widget.VideoView;
 
 import com.kaltura.playersdk.events.OnPlayerStateChangeListener;
@@ -72,6 +73,8 @@ public class PlayerView extends VideoView implements VideoPlayerInterface {
                 mediaPlayer.setOnBufferingUpdateListener(new MediaPlayer.OnBufferingUpdateListener() {
                     @Override
                     public void onBufferingUpdate(MediaPlayer mp, int progress) {
+                        Log.d("DAILYVICETEST", "onBufferingUpdate VIDEO?: " + progress);
+
                         if ( mProgressListener != null ) {
 
                             mProgressListener.onProgressUpdate(progress);
