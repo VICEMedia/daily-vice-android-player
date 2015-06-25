@@ -88,6 +88,8 @@ public class PlayerViewController extends RelativeLayout {
     private PlayerStates mState = PlayerStates.START;
     private PowerManager mPowerManager;
 
+    private ProgressTracker mProgressTracker;
+
     public PlayerViewController(Context context) {
         super(context);
         setupPlayerViewController( context );
@@ -470,6 +472,10 @@ public class PlayerViewController extends RelativeLayout {
         notifyKPlayer("asyncEvaluate", new String[] { expression, callbackName });
     }
 
+    public void setProgressTracker(ProgressTracker tracker){
+        this.mProgressTracker = tracker;
+    }
+
     // /////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * call js function on NativeBridge.videoPlayer
@@ -565,8 +571,13 @@ public class PlayerViewController extends RelativeLayout {
         mVideoInterface.registerPlayheadUpdate(new OnPlayheadUpdateListener() {
             @Override
             public void onPlayheadUpdated(int msec) {
-            	double curSec = msec / 1000.0;
-            	if ( curSec <= mDuration ) {
+
+                double curSec = msec / 1000.0;
+
+                if (mProgressTracker != null){
+                    mProgressTracker.receiveProgress((curSec / mDuration) * 100);
+                }
+                if ( curSec <= mDuration ) {
             		mCurrentSecond = curSec;
             		 mActivity.runOnUiThread(runUpdatePlayehead);
             	}
