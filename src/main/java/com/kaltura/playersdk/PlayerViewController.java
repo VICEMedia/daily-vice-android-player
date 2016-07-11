@@ -1,16 +1,5 @@
 package com.kaltura.playersdk;
 
-import java.lang.reflect.Method;
-import java.net.URLDecoder;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
@@ -18,128 +7,414 @@ import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Point;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Handler;
-import android.os.PowerManager;
+import android.support.annotation.Nullable;
+import android.support.v7.app.AppCompatActivity;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.view.animation.BounceInterpolator;
-import android.webkit.WebChromeClient;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.RelativeLayout;
 
-import com.kaltura.playersdk.chromecast.CastPlayer;
-import com.kaltura.playersdk.events.KPlayerEventListener;
-import com.kaltura.playersdk.events.KPlayerJsCallbackReadyListener;
-import com.kaltura.playersdk.events.LayoutReadyListener;
-import com.kaltura.playersdk.events.OnCastDeviceChangeListener;
-import com.kaltura.playersdk.events.OnCastRouteDetectedListener;
-import com.kaltura.playersdk.events.OnPlayerStateChangeListener;
-import com.kaltura.playersdk.events.OnPlayheadUpdateListener;
-import com.kaltura.playersdk.events.OnProgressListener;
-import com.kaltura.playersdk.events.OnToggleFullScreenListener;
-import com.kaltura.playersdk.widevine.WidevineHandler;
 import com.google.android.gms.cast.CastDevice;
-import com.kaltura.playersdk.chromecast.ChromecastHandler;
-import com.kaltura.playersdk.types.PlayerStates;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.kaltura.playersdk.actionHandlers.ShareManager;
+import com.kaltura.playersdk.cast.KRouterManager;
+import com.kaltura.playersdk.casting.KCastDevice;
+import com.kaltura.playersdk.casting.KCastProviderImpl;
+import com.kaltura.playersdk.casting.KCastRouterManager;
+import com.kaltura.playersdk.events.KPErrorEventListener;
+import com.kaltura.playersdk.events.KPEventListener;
+import com.kaltura.playersdk.events.KPFullScreenToggledEventListener;
+import com.kaltura.playersdk.events.KPPlayheadUpdateEventListener;
+import com.kaltura.playersdk.events.KPStateChangedEventListener;
+import com.kaltura.playersdk.events.KPlayerState;
+import com.kaltura.playersdk.helpers.CacheManager;
+import com.kaltura.playersdk.helpers.KStringUtilities;
+import com.kaltura.playersdk.interfaces.KCastProvider;
+import com.kaltura.playersdk.interfaces.KMediaControl;
+import com.kaltura.playersdk.interfaces.ScanCastDeviceListener;
+import com.kaltura.playersdk.players.KMediaFormat;
+import com.kaltura.playersdk.players.KPlayer;
+import com.kaltura.playersdk.players.KPlayerController;
+import com.kaltura.playersdk.players.KPlayerListener;
+import com.kaltura.playersdk.tracks.KTrackActions;
+import com.kaltura.playersdk.tracks.TrackType;
+import com.kaltura.playersdk.types.KPError;
+import com.kaltura.playersdk.types.NativeActionType;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Method;
+import java.net.URLDecoder;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Created by michalradwantzor on 9/24/13.
  */
-public class PlayerViewController extends RelativeLayout {
-
-    public static final String PLAYER_USER_AGENT = "kalturaNativeCordovaPlayer";
-    public static int CONTROL_BAR_HEIGHT = 58;
-
+public class PlayerViewController extends RelativeLayout implements KControlsView.KControlsViewClient, KRouterManager.KRouterManagerListener, KPlayerListener {
     public static String TAG = "PlayerViewController";
-    public static String HOST = "http://kgit.html5video.org";
-    public static String HTML5_URL = "/tags/v2.26.2/mwEmbedFrame.php";
 
-    // ===== Players =====
-    public static String LOCALE_FRENCH = "fr";
-    public static String PRIMARY_PLAYER_ID = "28336441";
-    public static String PRIMARY_PLAYER_FRENCH_ID = "28809511";
-    public static String SECONDARY_PLAYER_ID = "28041001";
-    // ===================
 
-    private VideoPlayerInterface mVideoInterface;
-    private PlayerView mPlayerView;
-    private WebView mWebView;
-    private RelativeLayout mBackgroundRL;
-    private double mCurrentSecond;
+
+    private KPlayerController playerController;
+    public KControlsView mWebView = null;
+    private double mCurSec;
     private Activity mActivity;
-    private double mDuration = 0;
-    private OnToggleFullScreenListener mFSListener;
-    private HashMap<String, ArrayList<KPlayerEventListener>> mKplayerEventsMap = new HashMap<String, ArrayList<KPlayerEventListener>>();
-    private HashMap<String, KPlayerEventListener> mKplayerEvaluatedMap = new HashMap<String, KPlayerEventListener>();
-    private KPlayerJsCallbackReadyListener mJsReadyListener;
-    private LayoutReadyListener mLayoutReadyListener;
+//    private OnShareListener mShareListener;
+    private JSONObject nativeActionParams;
+    private KPPlayerConfig mConfig;
 
-    private String mVideoUrl;
-    private String mVideoTitle = "";
-    private String mThumbUrl ="";
+
+    private String mIframeUrl = null;
+
+    private boolean mWvMinimized = false;
+
+    private int newWidth, newHeight;
+
+    private boolean mIsJsCallReadyRegistration = false;
+    private Set<ReadyEventListener> mCallBackReadyRegistrations;
+    private HashMap<String, ArrayList<HashMap<String, EventListener>>> mPlayerEventsHash;
+    private HashMap<String, EvaluateListener> mPlayerEvaluatedHash;
+    private Set<KPEventListener> eventListeners;
+
+    private KPErrorEventListener               mOnKPErrorEventListener;
+    private KPFullScreenToggledEventListener   mOnKPFullScreenToggledEventListener;
+    private KPStateChangedEventListener        mOnKPStateChangedEventListener;
+    private KPPlayheadUpdateEventListener      mOnKPPlayheadUpdateEventListener;
+
+    private SourceURLProvider mCustomSourceURLProvider;
+    private boolean isFullScreen = false;
+    private boolean isMediaChanged = false;
+    private boolean shouldReplay = false;
+
+    private KRouterManager routerManager;
+    private KCastProvider mCastProvider;
+
+
+    public static KCastProvider createCastProvider() {
+        return new KCastProviderImpl();
+    }
+
+    public void setCastProvider(KCastProvider castProvider) {
+        mCastProvider = castProvider;
+        ((KCastProviderImpl)castProvider).setScanCastDeviceListener(new ScanCastDeviceListener() {
+            @Override
+            public void onDisconnectCastDevice() {
+                mWebView.triggerEvent("chromecastDeviceDisConnected", null);
+                playerController.removeCastPlayer();
+            }
+
+            @Override
+            public void onConnecting() {
+                mWebView.triggerEvent("chromecastShowConnectingMsg", null);
+            }
+
+            @Override
+            public void onStartCasting(GoogleApiClient apiClient, CastDevice selectedDevice) {
+                mWebView.triggerEvent("chromecastDeviceConnected", null);
+            }
+
+            @Override
+            public void onDevicesInRange(boolean foundDevices) {
+                setKDPAttribute("chromecast", "visible", foundDevices ? "true" : "false");
+            }
+        });
+    }
+    /// KCastKalturaChannel Listener
+    @Override
+    public void onDeviceSelected(CastDevice castDeviceSelected) {
+        if (castDeviceSelected == null) {
+            mWebView.triggerEvent("chromecastDeviceDisConnected", null);
+            playerController.removeCastPlayer();
+        } else {
+            mWebView.triggerEvent("chromecastDeviceConnected", null);
+        }
+
+    }
+
+    @Override
+    public void onRouteAdded(boolean isAdded, KCastDevice route) {
+        if (getRouterManager().getAppListener() != null) {
+            if (isAdded) {
+                getRouterManager().getAppListener().onAddedCastDevice(route);
+            } else {
+                getRouterManager().getAppListener().onRemovedCastDevice(route);
+            }
+        }
+    }
+
+    @Override
+    public void onFoundDevices(final boolean didFound) {
+        if (getRouterManager().shouldEnableKalturaCastButton()) {
+            setKDPAttribute("chromecast", "visible", didFound ? "true" : "false");
+        }
+        if (getRouterManager().getAppListener() != null) {
+            getRouterManager().getAppListener().shouldPresentCastIcon(didFound);
+        }
+    }
+
+    @Override
+    public void onShouldDisconnectCastDevice() {
+        playerController.stopCasting();
+        mWebView.triggerEvent("chromecastDeviceDisConnected", null);
+        if (getRouterManager().getAppListener() != null) {
+            getRouterManager().getAppListener().onApplicationStatusChanged(false);
+        }
+    }
+
+    @Override
+    public void onConnecting() {
+        mWebView.triggerEvent("chromecastShowConnectingMsg", null);
+    }
     
-    private PlayerStates mState = PlayerStates.START;
-    private PowerManager mPowerManager;
+    @Override
+    public void onStartCasting(GoogleApiClient apiClient, CastDevice selectedDevice) {
+        if (getRouterManager().getAppListener() != null) {
+            getRouterManager().getAppListener().onApplicationStatusChanged(true);
+        }
+        playerController.startCasting(apiClient);
+    }
 
-    private ProgressTracker mProgressTracker;
+    private KRouterManager getRouterManager() {
+        return (KRouterManager)getKCastRouterManager();
+    }
+
+    @Override
+    public void setOnTouchListener(OnTouchListener l) {
+        mWebView.setOnTouchListener(l);
+    }
+
+    public KCastRouterManager getKCastRouterManager() {
+        if (routerManager == null) {
+            routerManager = new KRouterManager(mActivity, this);
+        }
+        return routerManager;
+    }
+
+    // trigger timeupdate events
+
+    public interface EventListener {
+        void handler(String eventName, String params);
+    }
+
+    public interface ReadyEventListener {
+        void handler();
+    }
+
+    public interface EvaluateListener {
+        void handler(String evaluateResponse);
+    }
+
+    public interface SourceURLProvider {
+        String getURL(String entryId, String currentURL);
+    }
 
     public PlayerViewController(Context context) {
         super(context);
-        setupPlayerViewController( context );
-	  
     }
 
     public PlayerViewController(Context context, AttributeSet attrs) {
         super(context, attrs);
-        setupPlayerViewController( context );
     }
 
     public PlayerViewController(Context context, AttributeSet attrs,
-            int defStyle) {
+                                int defStyle) {
         super(context, attrs, defStyle);
-        setupPlayerViewController( context );
     }
 
-    private void setupPlayerViewController( final Context context) {
-        mPowerManager = (PowerManager) context.getSystemService(context.POWER_SERVICE);
-     // Get a handler that can be used to post to the main thread
-        Handler mainHandler = new Handler(context.getMainLooper());
-        Runnable myRunnable = new Runnable() {
-			@Override
-			public void run() {
-				if ( !ChromecastHandler.initialized )
-				ChromecastHandler.initialize(context, new OnCastDeviceChangeListener() {
+    public KMediaControl getMediaControl() {
+        return playerController;
+    }
 
-					@Override
-					public void onCastDeviceChange(CastDevice oldDevice, CastDevice newDevice) {
-						if ( ChromecastHandler.selectedDevice != null ) {
-							notifyKPlayer("trigger", new String[] { "chromecastDeviceConnected" });
-						} else {
-							notifyKPlayer("trigger", new String[] { "chromecastDeviceDisConnected" });							
-						}
-						createPlayerInstance();
-					}		
-				},
-				new OnCastRouteDetectedListener(){
-					@Override
-					public void onCastRouteDetected() {
-						setChromecastVisiblity();
-					}				
-				});			
-			}       	
-        };
-        mainHandler.post(myRunnable);
+    public KTrackActions getTrackManager(){
+        return playerController.getTracksManager();
+    }
+
+    public void initWithConfiguration(KPPlayerConfig configuration) {
+        mConfig = configuration;
+        if (mConfig != null) {
+            setComponents(mConfig.getVideoURL());
+        }
+    }
+
+    public void loadPlayerIntoActivity(Activity activity) {
+        registerReadyEvent(new ReadyEventListener() {
+            @Override
+            public void handler() {
+                if (eventListeners != null) {
+                    for (KPEventListener listener: eventListeners) {
+                        listener.onKPlayerStateChanged(PlayerViewController.this, KPlayerState.LOADED);
+                    }
+                }
+                if (mOnKPStateChangedEventListener != null) {
+                         mOnKPStateChangedEventListener.onKPlayerStateChanged(PlayerViewController.this, KPlayerState.LOADED);
+                }
+            }
+        });
+        mActivity = activity;
+    }
+
+    @Deprecated
+    public void addEventListener(KPEventListener listener) {
+        if (listener != null) {
+            if (eventListeners == null) {
+                eventListeners = new HashSet<>();
+            }
+            eventListeners.add(listener);
+        }
+    }
+
+    public void setOnKPErrorEventListener(KPErrorEventListener kpErrorEventListener) {
+          mOnKPErrorEventListener = kpErrorEventListener;
+    }
+
+    public void setOnKPFullScreenToggledEventListener(KPFullScreenToggledEventListener kpFullScreenToggledEventListener) {
+          mOnKPFullScreenToggledEventListener = kpFullScreenToggledEventListener;
+    }
+
+    public void setOnKPStateChangedEventListener(KPStateChangedEventListener kpStateChangedEventListener) {
+          mOnKPStateChangedEventListener = kpStateChangedEventListener;
+    }
+
+    public void setOnKPPlayheadUpdateEventListener(KPPlayheadUpdateEventListener kpPlayheadUpdateEventListener) {
+          mOnKPPlayheadUpdateEventListener = kpPlayheadUpdateEventListener;
+    }
+
+    public KPPlayerConfig getConfig() {
+        return mConfig;
+    }
+
+    public void changeMedia(String entryId) {
+        if (entryId != null && entryId.length() > 0) {
+            JSONObject entryJson = new JSONObject();
+            try {
+                isMediaChanged = true;
+                entryJson.put("entryId", entryId);
+                sendNotification("changeMedia", entryJson.toString());
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void changeConfiguration(KPPlayerConfig config) {
+        if (config != null) {
+            mConfig = config;
+            mWebView.setVisibility(INVISIBLE);
+            mWebView.clearCache(true);
+            mWebView.loadUrl(config.getVideoURL() + buildSupportedMediaFormats());
+            mIsJsCallReadyRegistration = false;
+            registerReadyEvent(new ReadyEventListener() {
+                @Override
+                public void handler() {
+                    mWebView.setVisibility(VISIBLE);
+                    for (String event : mPlayerEventsHash.keySet()) {
+                        mWebView.addEventListener(event);
+                    }
+                }
+            });
+        }
+    }
+
+    @Deprecated
+    public void removeEventListener(KPEventListener listener) {
+        if (listener != null && eventListeners != null && eventListeners.contains(listener)) {
+            eventListeners.remove(listener);
+        }
+    }
+
+    public void setCustomSourceURLProvider(SourceURLProvider provider) {
+        mCustomSourceURLProvider = provider;
+    }
+    
+    private String getOverrideURL(String entryId, String currentURL) {
+        if (mCustomSourceURLProvider != null) {
+            String overrideURL = mCustomSourceURLProvider.getURL(entryId, currentURL);
+            if (overrideURL != null) {
+                return overrideURL;
+            }
+        }
+        return currentURL;
+    }
+
+    public void freeze(){
+        if(playerController != null) {
+            playerController.pause();
+        }
+    }
+
+    public void saveState() {
+        saveState(false);
+    }
+
+    public void saveState(boolean isOnBackground) {
+        playerController.savePlayerState();
+    }
+
+    public void resumeState() {
+        playerController.recoverPlayerState();
+    }
+
+    /**
+     * Release player's instance and save its last position for resuming later on.
+     * This method should be called when the main activity is paused.
+     */
+    public void releaseAndSavePosition() {
+        releaseAndSavePosition(false);
+    }
+
+    public void releaseAndSavePosition(boolean shouldResumeState) {
+        if (playerController != null) {
+            playerController.removePlayer(shouldResumeState);
+        }
+    }
+
+    public void resetPlayer() {
+        if (playerController != null) {
+            playerController.reset();
+        }
+    }
+
+    /**
+     * Recover from "releaseAndSavePosition", reload the player from previous position.
+     * This method should be called when the main activity is resumed.
+     */
+    public void resumePlayer() {
+        if (playerController != null) {
+            playerController.recoverPlayer();
+        }
+    }
+
+    public void removePlayer() {
+        if (playerController != null) {
+            playerController.destroy();
+        }
+        if (mWebView != null) {
+            mWebView.loadUrl("about:blank");
+            removeView(mWebView);
+            mWebView.destroy();
+        }
+        if (routerManager != null) {
+            routerManager.release();
+        }
     }
 
     public void setActivity( Activity activity ) {
-    	mActivity = activity;      
+        mActivity = activity;
     }
 
     @Override
@@ -147,26 +422,33 @@ public class PlayerViewController extends RelativeLayout {
         super.onDraw(canvas);
     }
 
-    public void setOnFullScreenListener(OnToggleFullScreenListener listener) {
-        mFSListener = listener;
-    }
 
-    @SuppressLint("NewApi")
-    private Point getRealScreenSize()
-    {
+//    public void setOnShareListener(OnShareListener listener) {
+//        mShareListener = listener;
+//    }
+
+    private void setVolumeLevel(double percent) {//Itay
+        AudioManager mgr = (AudioManager) mActivity.getSystemService(Context.AUDIO_SERVICE);
+        if (percent > 0.01) {
+            while (percent < 1.0) {
+                percent *= 10;
+            }
+        }
+        mgr.setStreamVolume(AudioManager.STREAM_MUSIC, (int) percent, 0);
+    }
+    @SuppressLint("NewApi") private Point getRealScreenSize(){
         Display display = mActivity.getWindowManager().getDefaultDisplay();
         int realWidth = 0;
         int realHeight = 0;
 
-        if (Build.VERSION.SDK_INT >= 17)
-        {
+        if (Build.VERSION.SDK_INT >= 17){
+            //new pleasant way to get real metrics
             DisplayMetrics realMetrics = new DisplayMetrics();
             display.getRealMetrics(realMetrics);
             realWidth = realMetrics.widthPixels;
             realHeight = realMetrics.heightPixels;
-        }
-        else
-        {
+
+        } else {
             try {
                 Method mGetRawH = Display.class.getMethod("getRawHeight");
                 Method mGetRawW = Display.class.getMethod("getRawWidth");
@@ -177,174 +459,162 @@ public class PlayerViewController extends RelativeLayout {
                 realHeight = display.getHeight();
                 Log.e("Display Info", "Couldn't use reflection to get the real display metrics.");
             }
+
         }
         return new Point(realWidth,realHeight);
     }
 
+    /**
+     * Sets the player's dimensions. Should be called for any player redraw
+     * (for example, in screen rotation, if supported by the main activity)
+     * @param width player's width
+     * @param height player's height
+     * @param xPadding player's X position
+     * @param yPadding player's Y position
+     * @deprecated Use {@link #setLayoutParams(ViewGroup.LayoutParams)} instead.
+     */
+    @Deprecated
     public void setPlayerViewDimensions(int width, int height, int xPadding, int yPadding) {
-    	setPadding(xPadding, yPadding, 0, 0);
-    	int newWidth = width + xPadding;
-    	int newHeight = height + yPadding;
+        setPadding(xPadding, yPadding, 0, 0);
+        newWidth = width + xPadding;
+        newHeight = height + yPadding;
 
-    	ViewGroup.LayoutParams lp = getLayoutParams();
+        ViewGroup.LayoutParams lp = getLayoutParams();
         if ( lp == null ) {
-        	lp = new ViewGroup.LayoutParams( newWidth, newHeight );
+            lp = new ViewGroup.LayoutParams( newWidth, newHeight );
         } else {
             lp.width = newWidth;
             lp.height = newHeight;
         }
 
         this.setLayoutParams(lp);
-        for ( int i=0; i< this.getChildCount(); i++ ) {
-        	View v = getChildAt(i);
-        	 ViewGroup.LayoutParams vlp = v.getLayoutParams();
-        	 vlp.width = newWidth;
-        	 vlp.height = newHeight;
-             updateViewLayout(v, vlp);
-        }
-        
-        if ( mPlayerView!=null ) {
-    		LayoutParams plp = (LayoutParams) mPlayerView.getLayoutParams();
-         	if ( xPadding==0 && yPadding==0 ) {
-         		plp.addRule(CENTER_IN_PARENT);        		
-         	} else {
-         		plp.addRule(CENTER_IN_PARENT, 0);
-         	}
-         	updateViewLayout(mPlayerView, plp);
+        for ( int i = 0; i < this.getChildCount(); i++ ) {
 
-            LayoutParams wvLp = (LayoutParams) ((View) mVideoInterface).getLayoutParams();
-            float scale = mActivity.getResources().getDisplayMetrics().density;
-            wvLp.height =  getRealScreenSize().y - (int) ( CONTROL_BAR_HEIGHT * scale + 0.5f);
-            wvLp.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-            updateViewLayout((View)mVideoInterface, wvLp);
-    	 }
-  
+            View v = getChildAt(i);
+            if( v == playerController.getPlayer() )
+            {
+                continue;
+            }
+            ViewGroup.LayoutParams vlp = v.getLayoutParams();
+            vlp.width = newWidth;
+            if ( (!mWvMinimized || !v.equals( mWebView)) ) {//
+                vlp.height = newHeight;
+            }
+            updateViewLayout(v, vlp);
+        }
+
+
+        if(mWebView != null) {
+//            mWebView.loadUrl("javascript:android.onData(NativeBridge.videoPlayer.getControlBarHeight())");
+            mWebView.fetchControlsBarHeight(new KControlsView.ControlsBarHeightFetcher() {
+                @Override
+                public void fetchHeight(int controlBarHeight) {
+                    if ( playerController.getPlayer() != null && playerController.getPlayer() instanceof FrameLayout && ((FrameLayout)playerController.getPlayer()).getParent() == PlayerViewController.this ) {
+                        LayoutParams wvLp = (LayoutParams) ((View) playerController.getPlayer()).getLayoutParams();
+
+                        if (getPaddingLeft() == 0 && getPaddingTop() == 0) {
+                            wvLp.addRule(CENTER_IN_PARENT);
+                        } else {
+                            wvLp.addRule(CENTER_IN_PARENT, 0);
+                        }
+                        float scale = mActivity.getResources().getDisplayMetrics().density;
+                        controlBarHeight = (int) (controlBarHeight * scale + 0.5f);
+                        wvLp.height = newHeight - controlBarHeight;
+                        wvLp.width = newWidth;
+                        wvLp.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+                        final LayoutParams lp = wvLp;
+                        mActivity.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                updateViewLayout((View) playerController.getPlayer(), lp);
+                                invalidate();
+                            }
+                        });
+
+                    }
+                }
+            });
+        }
         invalidate();
     }
 
+
+    /**
+     * Sets the player's dimensions. Should be called for any player redraw
+     * (for example, in screen rotation, if supported by the main activity)
+     * Player's X and Y position will be 0
+     * @param width player's width
+     * @param height player's height
+     * @deprecated Use {@link #setLayoutParams(ViewGroup.LayoutParams)} instead.
+     */
+    @Deprecated
     public void setPlayerViewDimensions(int width, int height) {
-    	setPlayerViewDimensions(width, height, 0, 0);
+        //noinspection deprecation
+        setPlayerViewDimensions(width, height, 0, 0);
     }
-    
+
     private void setChromecastVisiblity() {
-    	if ( ChromecastHandler.routeInfos.size() > 0 ) {
-			setKDPAttribute("chromecast", "visible", true);
-		} else {
-			setKDPAttribute("chromecast", "visible", false);						
-		}
+//        mWebView.setKDPAttribute("chromecast", "visible", ChromecastHandler.routeInfos.size() > 0 ? "true" : "false");
     }
-    
+
+    /*
+     * Build player URL and load it to player view
+     * @param requestDataSource - RequestDataSource object
+     */
+
     /**
      * Build player URL and load it to player view
-     * @param partnerId partner ID
-     * @param entryId entry ID
-     * @param activity bounding activity
+     * param iFrameUrl- String url
      */
-    public void addComponents(String partnerId, String entryId, Activity activity, boolean isPrimaryPlayer, String locale)
-    {
-        String playerID;
-        if(isPrimaryPlayer)
-        {
-            if(locale.equals(LOCALE_FRENCH))
-            {
-                playerID = PRIMARY_PLAYER_FRENCH_ID;
-            }
-            else
-            {
-                playerID = PRIMARY_PLAYER_ID;
-            }
-        }
-        else
-        {
-            playerID = SECONDARY_PLAYER_ID;
+    public void setComponents(String iframeUrl) {
+        if(mWebView == null) {
+            mWebView = new KControlsView(this.mActivity);
+            mWebView.setKControlsViewClient(this);
+
+            mCurSec = 0;
+            LayoutParams wvLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            mWebView.setLayoutParams(wvLp);
+            setBackgroundColor(Color.BLACK);
+            this.playerController = new KPlayerController(this);
+            this.addView(mWebView);
+            
         }
 
-        String iframeUrl = HOST + HTML5_URL
-            + "/p/" + partnerId
-            + "/uiconf_id/" + playerID
-            + "/entry_id/" + entryId
-            + "?wid=_" + partnerId
-            + "&iframeembed=true"
-            + "&playerId=kaltura_player"
-            + "&entry_id=" + entryId;
+        iframeUrl += buildSupportedMediaFormats();
 
-        addComponents(iframeUrl, activity);
+        if( mIframeUrl == null || !mIframeUrl.equals(iframeUrl) ) {
+            mIframeUrl = iframeUrl;
+            Uri uri = Uri.parse(iframeUrl);
+            if (mConfig.getCacheSize() > 0) {
+                CacheManager cacheManager = new CacheManager(mActivity.getApplicationContext());
+                cacheManager.setBaseURL(Utilities.stripLastUriPathSegment(mConfig.getServerURL()));
+                cacheManager.setCacheSize(mConfig.getCacheSize());
+                mWebView.setCacheManager(cacheManager);
+            }
+
+            mWebView.loadUrl(iframeUrl);
+        }
     }
 
-    /**
-     * Loads a given Kaltura Video URL into the video player.
-     *
-     * @param iframeUrl The URL to be displayed in the iframe
-     * @param activity The activity that this PlayerViewController is bound to
-     */
-    public void addComponents(String iframeUrl, Activity activity) {
-        // Storing activity + context
-        mActivity = activity;
 
-        // Creating a Webview instance
-        mWebView= new WebView(mActivity);
-
-        // Preparing layout params to make the webview fill this view
-        ViewGroup.LayoutParams currentLayoutParams = getLayoutParams();
-        LayoutParams webViewLayoutParams = new LayoutParams(currentLayoutParams.width, currentLayoutParams.height);
-
-        // Creating a background RelativeLayout
-        mBackgroundRL = new RelativeLayout(mActivity);
-        mBackgroundRL.setBackgroundColor(Color.BLACK);
-        this.addView(mBackgroundRL, currentLayoutParams);
-
-        // Creating a PlayerView
-        mPlayerView = new PlayerView(mActivity);
-        LayoutParams lp = new LayoutParams(currentLayoutParams.width, currentLayoutParams.height);
-        this.addView(mPlayerView, lp);
-
-        // Applying listeners
-        mVideoInterface = mPlayerView;
-        setPlayerListeners();
-        createPlayerInstance();
-
-        // Adding the WebView to this RelativeLayout
-        this.addView(mWebView, webViewLayoutParams);
-
-        // Preparing the WebView
-        mWebView.getSettings().setJavaScriptEnabled(true);
-        mWebView.setWebViewClient(new CustomWebViewClient());
-        mWebView.setWebChromeClient(new WebChromeClient());
-        mWebView.getSettings().setUserAgentString(
-                mWebView.getSettings().getUserAgentString()
-                        + PLAYER_USER_AGENT);
-
-        if (Build.VERSION.SDK_INT >= 11) {
-            mWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-        }
-
-        // Loading the URL
-        mWebView.loadUrl(iframeUrl);
-        mWebView.setBackgroundColor(0);
-    }
-    
     /**
      * create PlayerView / CastPlayer instance according to cast status
      */
-    private void createPlayerInstance() {
-    	if ( mVideoInterface != null ) {    		
-    		mVideoInterface.removePlayheadUpdateListener();
-    		if ( mVideoInterface instanceof CastPlayer)
-    			mVideoInterface.stop();
-    	}
-    	
-    	if ( ChromecastHandler.selectedDevice != null ) {
-    		mVideoInterface = new CastPlayer(getContext(), mVideoTitle, null, null, mThumbUrl, mVideoUrl);
-    	} else {
-    		mVideoInterface = mPlayerView;
-    	}
-        mVideoInterface.setStartingPoint( (int) (mCurrentSecond * 1000) );
-		setPlayerListeners();
+
+    private void replacePlayerViewChild( View newChild, View oldChild ) {
+        if ( oldChild.getParent().equals( this ) ) {
+            this.removeView( oldChild );
+        }
+
+        if ( this.getChildCount() > 1 ) {
+            //last child is the KMediaControl webview
+            this.addView( newChild , this.getChildCount() -1, oldChild.getLayoutParams() );
+        }
     }
 
     /**
      * slides with animation according the given values
-     * 
+     *
      * @param x
      *            x offset to slide
      * @param duration
@@ -354,132 +624,59 @@ public class PlayerViewController extends RelativeLayout {
         this.animate().xBy(x).setDuration(duration)
                 .setInterpolator(new BounceInterpolator());
     }
-    
-    public void destroy() {
-       this.stop();
-    }
-    
-    public void savePlaybackPosition() {
-    	if ( mVideoInterface!= null ) {
-    		mVideoInterface.setStartingPoint((int) (mCurrentSecond * 1000));
-    	}
-    }
+
+
 
     // /////////////////////////////////////////////////////////////////////////////////////////////
     // VideoPlayerInterface methods
     // /////////////////////////////////////////////////////////////////////////////////////////////
-    public boolean isPlaying() {
-        return (mVideoInterface != null && mVideoInterface.isPlaying());
-    }
+//    public boolean isPlaying() {
+//        return (playerController.getPlayer() != null && playerController.getPlayer().isPlaying());
+//    }
 
     /**
-     * 
+     *
      * @return duration in seconds
      */
-    public double getDuration() {
+    public double getDurationSec() {
         double duration = 0;
-        if (mVideoInterface != null)
-            duration = mVideoInterface.getDuration() / 1000;
-
+        if (playerController != null) {
+            duration = playerController.getDuration() / 1000;
+        }
         return duration;
     }
 
     public String getVideoUrl() {
         String url = null;
-        if (mVideoInterface != null)
-            url = mVideoInterface.getVideoUrl();
+        if (playerController != null)
+            url = playerController.getSrc();
 
         return url;
     }
 
-    public void play() {
-        if (mVideoInterface != null) {
-            mVideoInterface.play();
+    public double getCurrentPlaybackTime() {
+        if (playerController != null) {
+            return playerController.getCurrentPlaybackTime();
         }
+        return 0.0;
     }
 
-    public void pause() {
-        if (mVideoInterface != null) {
-            mVideoInterface.pause();
-        }
-    }
-
-    public void stop() {
-        if (mVideoInterface != null) {
-            mVideoInterface.stop();
-        }
-    }
-
-    public void seek(int msec) {
-        if (mVideoInterface != null) {
-            mVideoInterface.seek(msec);
-        }
-    }
 
     // /////////////////////////////////////////////////////////////////////////////////////////////
     // Kaltura Player external API
     // /////////////////////////////////////////////////////////////////////////////////////////////
-    public void registerJsCallbackReady( KPlayerJsCallbackReadyListener listener ) {
-    	mJsReadyListener = listener;
-    }
 
-    public void registerLayoutReadyListener( LayoutReadyListener listener ) {
-        mLayoutReadyListener = listener;
-    }
-    
-    public void sendNotification(String noteName, JSONObject noteBody) {
-        notifyKPlayer("sendNotification",  new String[] { noteName, noteBody.toString() });      
-    }
+//    public void sendNotification(String noteName, JSONObject noteBody) {
+//        notifyKPlayer("sendNotification", new String[]{noteName, noteBody.toString()});
+//    }
 
-    public void addKPlayerEventListener(String eventName,
-            KPlayerEventListener listener) {
-        ArrayList<KPlayerEventListener> listeners = mKplayerEventsMap
-                .get(eventName);
-        boolean isNewEvent = false;
-        if ( listeners == null ) {
-            listeners = new ArrayList<KPlayerEventListener>();
-        }
-        if ( listeners.size() == 0 ) {
-            isNewEvent = true;
-        }
-        listeners.add(listener);
-        mKplayerEventsMap.put(eventName, listeners);
-        if ( isNewEvent )
-            notifyKPlayer("addJsListener", new String[] { eventName });
-    }
 
-    public void removeKPlayerEventListener(String eventName,String callbackName) {
-        ArrayList<KPlayerEventListener> listeners = mKplayerEventsMap.get(eventName);
-        if (listeners != null) {
-            for (int i = 0; i < listeners.size(); i++) {
-                if ( listeners.get(i).getCallbackName().equals( callbackName )) {
-                    listeners.remove(i);
-                    break;
-                }
-            }
-            if ( listeners.size() == 0 )
-                notifyKPlayer( "removeJsListener", new String[] { eventName });
-        }
-    }
 
-    public void setKDPAttribute(String hostName, String propName, Object value) {
-        notifyKPlayer("setKDPAttribute", new Object[] { hostName, propName, value });
-    }
 
-    public void asyncEvaluate(String expression, KPlayerEventListener listener) {
-        String callbackName = listener.getCallbackName();
-        mKplayerEvaluatedMap.put(callbackName, listener);
-        notifyKPlayer("asyncEvaluate", new String[] { expression, callbackName });
-    }
-
-    public void setProgressTracker(ProgressTracker tracker){
-        this.mProgressTracker = tracker;
-    }
-
-    // /////////////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * call js function on NativeBridge.videoPlayer
-     * 
+     *
      * @param action
      *            function name
      * @param eventValues
@@ -490,24 +687,22 @@ public class PlayerViewController extends RelativeLayout {
             @Override
             public void run() {
                 String values = "";
-                
+
                 if (eventValues != null) {
-                	for ( int i=0; i< eventValues.length; i++ ) {
-                		if ( eventValues[i] instanceof String ) {
-                			values += "'" + eventValues[i] + "'";
-                		} else {
-                            if(eventValues[i] != null)
-                            {
-                                values += eventValues[i].toString();
-                            }
-                		}
-            			if ( i < eventValues.length - 1 ) {
-            				values += ", ";
-            			}
-                	}
-                   // values = TextUtils.join("', '", eventValues);
+                    for (int i = 0; i < eventValues.length; i++) {
+                        if (eventValues[i] instanceof String) {
+                            values += "'" + eventValues[i] + "'";
+                        } else {
+                            values += eventValues[i].toString();
+                        }
+                        if (i < eventValues.length - 1) {
+                            values += ", ";
+                        }
+                    }
+                    // values = TextUtils.join("', '", eventValues);
                 }
-                if ( mWebView != null ) {
+                if (mWebView != null) {
+                    Log.d(TAG, "NotifyKplayer: " + values);
                     mWebView.loadUrl("javascript:NativeBridge.videoPlayer."
                             + action + "(" + values + ");");
                 }
@@ -516,322 +711,510 @@ public class PlayerViewController extends RelativeLayout {
         });
     }
 
-    private void setPlayerListeners() {
-        // notify player state change events
-        mVideoInterface
-                .registerPlayerStateChange(new OnPlayerStateChangeListener() {
-                    @Override
-                    public boolean onStateChanged(PlayerStates state) {
-                    	if ( state == PlayerStates.START ) {
-                    		mDuration = getDuration();
-                    		notifyKPlayer("trigger", new Object[]{ "durationchange", mDuration });
-                    		notifyKPlayer("trigger", new Object[]{ "loadedmetadata" });                  		
-                    	}
-                    	if ( state != mState ) {
-                    		mState = state;
-                    		String stateName = "";
-                            switch (state) {
-                            case PLAY:
-                                stateName = "play";
-                                break;
-                            case PAUSE:
-                                stateName = "pause";
-                                break;
-                            case END:
-                                stateName = "ended";
-                                break;
-                            case SEEKING:
-                            	stateName = "seeking";
-                            	break;
-                            case SEEKED:
-                            	stateName = "seeked";
-                            	break;
-                            default:
-                                break;
-                            }
-                            if (stateName != "") {
-                                final String eventName = stateName;
-                                notifyKPlayer("trigger", new String[] { eventName });
-                            }
-                    	}
-                        
-                        return false;
-                    }
-                });
 
-        // trigger timeupdate events
-        final Runnable runUpdatePlayehead = new Runnable() {
-            @Override
-            public void run() {               
-                notifyKPlayer( "trigger", new Object[]{ "timeupdate", mCurrentSecond});
-            }
-        };
-
-        // listens for playhead update
-        mVideoInterface.registerPlayheadUpdate(new OnPlayheadUpdateListener() {
-            @Override
-            public void onPlayheadUpdated(int msec) {
-
-                double curSec = msec / 1000.0;
-
-                if (mProgressTracker != null){
-                    mProgressTracker.receiveProgress((curSec / mDuration) * 100);
-                }
-                if ( curSec <= mDuration ) {
-            		mCurrentSecond = curSec;
-            		 mActivity.runOnUiThread(runUpdatePlayehead);
-            	}
-            	//device is sleeping, pause player
-            	if ( !mPowerManager.isScreenOn() ) {
-            		mVideoInterface.pause();
-            	}
-            }
-        });
-
-        // listens for progress events and notify javascript
-        mVideoInterface.registerProgressUpdate(new OnProgressListener() {
-            @Override
-            public void onProgressUpdate(int progress) {
-                double percent = progress / 100.0;
-                notifyKPlayer("trigger", new Object[]{"progress", percent});
-
-            }
-        });
-    }
-
-    private class CustomWebViewClient extends WebViewClient {
-
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            if (url != null) {
-             	Log.d(TAG, "shouldOverrideUrlLoading::url to load: " + url);
-             	
-            	if ( url.startsWith("js-frame:") ) {
-                    String[] arr = url.split(":");
-                    if (arr != null && arr.length > 1) {
-                        String action = arr[1];
-
-                        if (action.equals("notifyJsReady")) {
-                            if ( mJsReadyListener != null ) {
-                        		mJsReadyListener.jsCallbackReady();
-                        	}
-                        }
-                        else if (action.equals("notifyLayoutReady")) {
-                            if( mLayoutReadyListener != null ) {
-                                mLayoutReadyListener.onLayoutReady();
-                                mLayoutReadyListener = null;
-                            }
-                        	setChromecastVisiblity();
-                        	return true;
-                        }
-                        else if (action.equals("play")) {
-                            mVideoInterface.play();
-                            return true;
-                        }
-
-                        else if (action.equals("pause")) {
-                            if (mVideoInterface.canPause()) {
-                                mVideoInterface.pause();
-                                return true;
-                            }
-                        }
-
-                        else if (action.equals("toggleFullscreen")) {  
-                            if (mFSListener != null) {
-                                mFSListener.onToggleFullScreen();
-                                return true;
-                            }
-                        }
-                        else if ( action.equals("showChromecastDeviceList") ) {
-                        	if(!mActivity.isFinishing())
-                        	{
-                        		//workaround to fix weird exception sometimes
-                        		try {
-                        			ChromecastHandler.showCCDialog(getContext());
-                        		} catch (Exception e ) {
-                        			Log.d(TAG, "failed to open cc list");
-                        		}
-                        	
-                        	}
-                        }
-                        // action with params
-                        else if (arr.length > 3) {
-                            try {
-                                String value = URLDecoder.decode(arr[3], "UTF-8");
-                                if (value != null && value.length() > 2) {
-                                    if (action.equals("setAttribute")) {
-                                    	JSONArray jsonArr = new JSONArray( value );
-                                    	
-                                    	List<String> params = new ArrayList<String>();
-                                    	for (int i=0; i<jsonArr.length(); i++) {
-                                    		params.add( jsonArr.getString(i) );
-                                    	}
-                                    
-                                        if (params != null && params.size() > 1) {
-                                            if (params.get(0).equals("currentTime")) {
-                                                int seekTo = Math.round(Float.parseFloat(params.get(1)) * 1000);
-                                                mVideoInterface.seek(seekTo);
-                                            } else if (params.get(0).equals("src")) {
-                                                // remove " from the edges
-                                                mVideoUrl = params.get(1);
-                                                mVideoInterface.setVideoUrl(mVideoUrl);
-                                                asyncEvaluate("{mediaProxy.entry.name}", new KPlayerEventListener() {
-    												@Override
-    												public void onKPlayerEvent(
-    														Object body) {
-    													mVideoTitle = (String) body;												
-    												}
-
-    												@Override
-    												public String getCallbackName() {
-    													return "getEntryName";
-    												}
-                                                });
-                                                asyncEvaluate("{mediaProxy.entry.thumbnailUrl}", new KPlayerEventListener() {
-                                                	@Override
-                                                	public void onKPlayerEvent(
-                                                			Object body) {
-                                                		mThumbUrl = (String) body;												
-                                                	}
-                                                	
-                                                	@Override
-                                                	public String getCallbackName() {
-                                                		return "getEntryThumb";
-                                                	}
-                                                });
-                                            } else if (params.get(0).equals("wvServerKey")) {
-                                                String licenseUrl = params.get(1);
-                                                WidevineHandler.acquireRights(
-                                                        mActivity,
-                                                        mVideoInterface.getVideoUrl(),
-                                                        licenseUrl);
-                                            }
-                                        }
-                                    } else if (action.equals("notifyKPlayerEvent")) {
-                                        return notifyKPlayerEvent(value, mKplayerEventsMap, false);
-                                    } else if (action.equals("notifyKPlayerEvaluated")) {
-                                        return notifyKPlayerEvent(value, mKplayerEvaluatedMap, true);
-                                    }
-                                }
-
-                            } catch (Exception e) {
-                                Log.w(TAG, "action failed: " + action);
-                            }
-                        }
-
-                    }
-            	} else {
-            		if (mVideoInterface.canPause()) {
-                        mVideoInterface.pause();
-                        mVideoInterface.setStartingPoint((int) (mCurrentSecond * 1000));
-                    }
-            		Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse( url ));
-            		mActivity.startActivity(browserIntent);
-            		return true;
-            	}
-
-            }
-
-            return false;
+    @Override
+    public void handleHtml5LibCall(String functionName, int callbackId, String args) {
+        Log.d(TAG + " handleHtml5LibCall", functionName + " " + args);
+        Method bridgeMethod = KStringUtilities.isMethodImplemented(this, functionName);
+        Object object = this;
+        if (bridgeMethod == null) {
+            KPlayer player = this.playerController.getPlayer();
+            bridgeMethod = KStringUtilities.isMethodImplemented(player, functionName);
+            object = player;
         }
-
-        /**
-         * 
-         * @param input
-         *            string
-         * @return given string without its first and last characters
-         */
-        private String getStrippedString(String input) {
-            return input.substring(1, input.length() - 1);
-        }
-
-        /**
-         * Notify the matching listener that event has occured
-         * 
-         * @param input
-         *            String with event params
-         * @param hashMap
-         *            data provider to look the listener in
-         * @param clearListeners
-         *            whether to remove listeners after notifying them
-         * @return true if listener was noticed, else false
-         */
-        private boolean notifyKPlayerEvent(String input,
-                HashMap hashMap,
-                boolean clearListeners) {
-            if (hashMap != null) {
-                String value = getStrippedString(input);
-                // //
-                // replace inner json "," delimiter so we can split with harming
-                // json objects
-                // value = value.replaceAll("([{][^}]+)(,)", "$1;");
-                // ///
-                value = value.replaceAll(("\\\\\""), "\"");
-                boolean isObject = true;
-                // can't split by "," since jsonString might have inner ","
-                String[] params = value.split("\\{");
-                // if parameter is not a json object, the delimiter is ","
-                if (params.length == 1) {
-                    isObject = false;
-                    params = value.split(",");
+        if (bridgeMethod != null) {
+            try {
+                if (args == null) {
+                    Class<?>[] params = bridgeMethod.getParameterTypes(); // protect case for params mismatch
+                    if (params.length != 1){
+                        bridgeMethod.invoke(object);
+                    }
+                    else {
+                        Log.e("handleHtml5LibCall", "Error, Parameters mismatch for method: " + functionName + " number of params = " + params.length);
+                    }
                 } else {
-                    params[0] = params[0].substring(0, params[0].indexOf(","));
+                    bridgeMethod.invoke(object, args);
                 }
-                String key = getStrippedString(params[0]);
-                // parse object, if sent
-                Object bodyObj = null;
-                if (params.length > 1 && params[1] != "null") {
-                    if (isObject) { // json string
-                        String body = "{" + params[1] + "}";
-                        try {
-                            bodyObj = new JSONObject(body);
-                        } catch (JSONException e) {
-                            Log.w(TAG, "failed to parse object");
-                        }
-                    } else { // simple string
-                    	if ( params[1].startsWith("\"") )
-                    		bodyObj = getStrippedString(params[1]);
-                    	else
-                    		bodyObj = params[1];
-                    }
-                }
-                
-                Object mapValue = hashMap.get(key);
-                if ( mapValue instanceof KPlayerEventListener ) {
-                    ((KPlayerEventListener)mapValue).onKPlayerEvent(bodyObj);
-                } 
-                else if ( mapValue instanceof ArrayList) {
-                    ArrayList<KPlayerEventListener> listeners = (ArrayList)mapValue;
-                            for (Iterator<KPlayerEventListener> i = listeners.iterator(); i
-                                    .hasNext();) {
-                                i.next().onKPlayerEvent(bodyObj);
-                            }
-                }
-
-                if (clearListeners) {
-                    hashMap.remove(key);
-                }
-
-                return true;
+            } catch (Exception e) {
+                e.printStackTrace();
             }
+        }
+    }
 
-            return false;
+    @Override
+    public void openURL(String url) {
+        final Intent intent = new Intent(Intent.ACTION_VIEW).setData(Uri.parse(url));
+        mActivity.startActivity(intent);
+    }
+
+    @Override
+    public void handleKControlsError(KPError error) {
+        sendOnKPlayerError(error.getErrorMsg());
+    }
+
+    //
+    @Override
+    public void eventWithValue(KPlayer player, String eventName, String eventValue) {
+        Log.d("EventWithValue", "Name: " + eventName + " Value: " + eventValue);
+        KStringUtilities event = new KStringUtilities(eventName);
+        KPlayerState kState = KPlayerState.getStateForEventName(eventName);
+        if ((isMediaChanged && kState == KPlayerState.READY && getConfig().isAutoPlay())) {
+            isMediaChanged = false;
+            play();
+        }
+        if (kState == KPlayerState.SEEKED && shouldReplay) {
+            shouldReplay = false;
+            play();
+        }
+        if (eventListeners != null) {
+            for (KPEventListener listener : eventListeners) {
+                if (!KPlayerState.UNKNOWN.equals(kState)) {
+                    listener.onKPlayerStateChanged(this, kState);
+                } else if (event.isTimeUpdate()) {
+                    listener.onKPlayerPlayheadUpdate(this, Float.parseFloat(eventValue));
+                } else if (event.isEnded()) {
+                    listener.onKPlayerStateChanged(this, KPlayerState.ENDED);
+                }
+            }
         }
 
+        if (mOnKPStateChangedEventListener != null) {
+          if (!KPlayerState.UNKNOWN.equals(kState)) {
+                    mOnKPStateChangedEventListener.onKPlayerStateChanged(this, kState);
+          }
+        }
+
+        if (mOnKPPlayheadUpdateEventListener != null) {
+            if (event.isTimeUpdate()) {
+                mOnKPPlayheadUpdateEventListener.onKPlayerPlayheadUpdate(this, (long) (Float.parseFloat(eventValue) * 1000));
+            }
+        }
+
+        if(KPlayerListener.ErrorKey.equals(eventName) && !getConfig().isWebDialogEnabled()) {
+            Log.e(TAG, "blocking Dialog for: " + eventValue);
+
+            sendOnKPlayerError(eventValue);
+            return;
+        }
+        this.mWebView.triggerEvent(eventName, eventValue);
     }
 
-    // =======================================
-    // ========== Getters + Setters ==========
-    // =======================================
-
-    public double getCurrentSecond()
-    {
-        return mCurrentSecond;
+    @Override
+    public void eventWithJSON(KPlayer player, String eventName, String jsonValue) {
+        this.mWebView.triggerEventWithJSON(eventName, jsonValue);
     }
 
-    public void setCurrentSecond(double currentSecond)
-    {
-        mCurrentSecond = currentSecond;
+    private void play() {
+        playerController.play();
     }
 
+    private void pause() {
+        playerController.pause();
+    }
+    
+    public void registerReadyEvent(ReadyEventListener listener) {
+        if (mIsJsCallReadyRegistration) {
+            listener.handler();
+        } else {
+            if (mCallBackReadyRegistrations == null && listener != null) {
+                mCallBackReadyRegistrations = new HashSet<>();
+            }
+            mCallBackReadyRegistrations.add(listener);
+        }
+    }
+
+    public void addKPlayerEventListener(final String event, final String eventID, final EventListener listener) {
+        this.registerReadyEvent(new ReadyEventListener() {
+            @Override
+            public void handler() {
+                if (mPlayerEventsHash == null) {
+                    mPlayerEventsHash = new HashMap();
+                }
+                ArrayList<HashMap<String, EventListener>> listenerArr = (ArrayList)mPlayerEventsHash.get(event);
+                if (listenerArr == null) {
+                    listenerArr = new ArrayList();
+                }
+                HashMap<String, EventListener> addedEvent = new HashMap();
+                addedEvent.put(eventID, listener);
+                listenerArr.add(addedEvent);
+                mPlayerEventsHash.put(event, listenerArr);
+                if (listenerArr.size() == 1 && !KStringUtilities.isToggleFullScreen(event)) {
+                    mWebView.addEventListener(event);
+                }
+            }
+        });
+    }
+
+    public void removeKPlayerEventListener(String event,String eventID) {
+        ArrayList<HashMap<String, EventListener>> listenerArr = mPlayerEventsHash.get(event);
+        if (listenerArr == null || listenerArr.size() == 0) {
+            return;
+        }
+        ArrayList<HashMap<String, EventListener>> temp = new ArrayList<HashMap<String, EventListener>>(listenerArr);
+        for (HashMap<String, EventListener> hash: temp) {
+            if (hash.keySet().toArray()[hash.keySet().size() - 1].equals(eventID)) {
+                listenerArr.remove(hash);
+            }
+        }
+        if (listenerArr.size() == 0) {
+            listenerArr = null;
+            if (!KStringUtilities.isToggleFullScreen(event)) {
+                mWebView.removeEventListener(event);
+            }
+        }
+    }
+
+    public void asyncEvaluate(String expression, String expressionID, EvaluateListener evaluateListener) {
+        if (mPlayerEvaluatedHash == null) {
+            mPlayerEvaluatedHash = new HashMap<String, EvaluateListener>();
+        }
+        mPlayerEvaluatedHash.put(expressionID, evaluateListener);
+        mWebView.evaluate(expression, expressionID);
+    }
+
+    public void sendNotification(String notificationName,@Nullable String params) {
+        if (mWebView != null) {
+            if (notificationName == null) {
+                notificationName = "null";
+            }
+            mWebView.sendNotification(notificationName, params);
+        }
+    }
+
+    public void setKDPAttribute(final String pluginName, final String propertyName, final String value) {
+        registerReadyEvent(new ReadyEventListener() {
+            @Override
+            public void handler() {
+                mWebView.setKDPAttribute(pluginName, propertyName, value);
+            }
+        });
+    }
+
+    public void triggerEvent(String event, String value) {
+        mWebView.triggerEvent(event, value);
+    }
+
+    /// Bridge methods
+    private void setAttribute(String argsString) {
+        String[] args = KStringUtilities.fetchArgs(argsString);
+        if (args != null && args.length == 2) {
+            String attributeName = args[0];
+            String attributeValue = args[1];
+
+            KStringUtilities.Attribute attribute = KStringUtilities.attributeEnumFromString(attributeName);
+            if (attribute == null) {
+                return;
+            }
+            Log.d(TAG, "setAttribute Attribute: " + attribute + " " + attributeValue);
+            switch (attribute) {
+                case src:
+                    // attributeValue is the selected source -- allow override.
+                    attributeValue = getOverrideURL(mConfig.getEntryId(), attributeValue);
+                    this.playerController.setSrc(attributeValue);
+                    if (mConfig.getMediaPlayFrom() > 0) {
+                        playerController.setCurrentPlaybackTime((float) mConfig.getMediaPlayFrom());
+                    }
+                    break;
+                case currentTime:
+                    if (eventListeners != null) {
+                        for (KPEventListener listener : eventListeners) {
+                            listener.onKPlayerStateChanged(this, KPlayerState.SEEKING);
+                        }
+                    }
+                    if (mOnKPStateChangedEventListener != null) {
+                             mOnKPStateChangedEventListener.onKPlayerStateChanged(this, KPlayerState.SEEKING);
+                    }
+                    float time = Float.parseFloat(attributeValue);
+                    this.playerController.setCurrentPlaybackTime(time);
+                    break;
+                case visible:
+                    this.triggerEvent("visible", attributeValue);
+                    break;
+                case licenseUri:
+                    this.playerController.setLicenseUri(attributeValue);
+                    break;
+                case nativeAction:
+                    doNativeAction(attributeValue);
+                    break;
+                case language:
+                    this.playerController.setLocale(attributeValue);
+                    break;
+                case doubleClickRequestAds:
+                    playerController.initIMA(attributeValue,mConfig.getAdMimeType(), mConfig.getAdPreferedBitrate(), mActivity);
+                    break;
+                case goLive:
+                    (playerController.getPlayer()).switchToLive();
+                    break;
+                case chromecastAppId:
+//                    getRouterManager().initialize(attributeValue);
+                    getRouterManager().initialize(attributeValue);
+                    Log.d(TAG, "chromecast.initialize:" + attributeValue);
+                    break;
+                case playerError:
+                    sendOnKPlayerError(attributeValue);
+                    break;
+                case textTrackSelected:
+                    Log.d(TAG, "textTrackSelected");
+                    if (attributeValue == null){
+                        return;
+                    }
+                    if ("Off".equalsIgnoreCase(attributeValue)){
+                        getTrackManager().switchTrack(TrackType.TEXT,-1);
+                        return;
+                    }
+                    for (int index = 0 ; index < getTrackManager().getTextTrackList().size() ; index++) {
+                        //Log.d(TAG, "<" + getTrackManager().getTextTrackList().get(index) + ">/<" + attributeValue + ">");
+                        if ((getTrackManager().getTextTrackList().get(index).trackLabel).equals(attributeValue)){
+                            getTrackManager().switchTrack(TrackType.TEXT,index);
+                            return;
+                        }
+                    }
+                    break;
+                case audioTrackSelected:
+                    Log.d(TAG, "audioTrackSelected");
+                    switchAudioTrack(attributeValue);
+                    break;
+            }
+        }
+    }
+
+
+    private void sendOnKPlayerError(String attributeValue) {
+        if (eventListeners != null) {
+            for (KPEventListener listener : eventListeners) {
+                Log.d(TAG, "sendOnKPlayerError:" + attributeValue);
+                listener.onKPlayerError(this, new KPError(attributeValue));
+            }
+        }
+        if (mOnKPErrorEventListener != null){
+            mOnKPErrorEventListener.onKPlayerError(this, new KPError(attributeValue));
+        }
+    }
+
+    private void switchFlavor(String index) {
+        try {
+            index = URLDecoder.decode(index, "UTF-8").replaceAll("\"", ""); // neend to unescape
+
+        } catch (UnsupportedEncodingException e) {
+            return;
+        }
+        switchTrack(TrackType.VIDEO,index);
+    }
+
+    private void switchAudioTrack(String index) {
+
+        switchTrack(TrackType.AUDIO,index);
+    }
+
+    private void selectClosedCaptions(String index) {
+        switchTrack(TrackType.TEXT,index);
+    }
+
+
+    private void switchTrack(TrackType trackType, String index) {
+        int trackIndex = -1;
+
+        try {
+            trackIndex = Integer.parseInt(index);
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "switchTrack " + trackType.name() + " failed parsing index, ignoring request" + index);
+            return;
+        }
+        getTrackManager().switchTrack(trackType, trackIndex);
+    }
+
+    public void setTracksEventListener(KTrackActions.EventListener tracksEventListener){
+        playerController.setTracksEventListener(tracksEventListener);
+    }
+
+    private void notifyJsReady() {
+        mIsJsCallReadyRegistration = true;
+        if (mCallBackReadyRegistrations != null) {
+            ArrayList<ReadyEventListener> temp = new ArrayList<ReadyEventListener>(mCallBackReadyRegistrations);
+            for (ReadyEventListener listener: temp) {
+                listener.handler();
+                mCallBackReadyRegistrations.remove(listener);
+            }
+            temp = null;
+            mCallBackReadyRegistrations = null;
+        }
+    }
+
+    private void notifyKPlayerEvent(String args) {
+        String[] arguments = KStringUtilities.fetchArgs(args);
+        if (arguments.length == 2) {
+            String eventName = arguments[0];
+            String params = arguments[1];
+            ArrayList<HashMap<String, EventListener>> listenerArr = mPlayerEventsHash.get(eventName);
+            if (listenerArr != null) {
+                for (HashMap<String, EventListener> hash: listenerArr) {
+                    ((EventListener)hash.values().toArray()[hash.values().size() - 1]).handler(eventName, params);
+                }
+            }
+        }
+    }
+
+    private void notifyKPlayerEvaluated(String args) {
+        String[] arguments = KStringUtilities.fetchArgs(args);
+        if (arguments.length == 2) {
+            EvaluateListener listener = mPlayerEvaluatedHash.get(arguments[0]);
+            if (listener != null) {
+                listener.handler(arguments[1]);
+            }
+        } else {
+            Log.d("AsyncEvaluate Error", "Missing evaluate params");
+        }
+    }
+
+    private void notifyLayoutReady() {
+        setChromecastVisiblity();
+    }
+
+    private void toggleFullscreen() {
+        isFullScreen = !isFullScreen;
+        if (eventListeners != null) {
+            for (KPEventListener listener : eventListeners) {
+                listener.onKPlayerFullScreenToggeled(this, isFullScreen);
+            }
+        }
+        if (mOnKPFullScreenToggledEventListener != null) {
+            mOnKPFullScreenToggledEventListener.onKPlayerFullScreenToggled(this, isFullScreen);
+        }
+
+        if (eventListeners == null && mOnKPFullScreenToggledEventListener == null) {
+            defaultFullscreenToggle();
+        }
+    }
+
+
+    private void defaultFullscreenToggle() {
+
+        int uiOptions = mActivity.getWindow().getDecorView().getSystemUiVisibility();
+        int newUiOptions = uiOptions;
+        newUiOptions ^= View.SYSTEM_UI_FLAG_HIDE_NAVIGATION;
+        newUiOptions ^= View.SYSTEM_UI_FLAG_FULLSCREEN;
+        newUiOptions ^= View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+
+        if (isFullScreen) {
+            Log.d(TAG,"Set to onOpenFullScreen");
+            sendNotification("onOpenFullScreen", null);
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+                mActivity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                mActivity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+
+            }else{
+                mActivity.getWindow().getDecorView().setSystemUiVisibility(newUiOptions);
+            }
+            ((AppCompatActivity) mActivity).getSupportActionBar().hide();
+        } else {
+            Log.d(TAG,"Set to onCloseFullScreen");
+            sendNotification("onCloseFullScreen", null);
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+                mActivity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+                mActivity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            }else{
+                mActivity.getWindow().getDecorView().setSystemUiVisibility(newUiOptions);
+            }
+            ((AppCompatActivity) mActivity).getSupportActionBar().show();
+        }
+        // set landscape
+        // if(fullscreen)  activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        // else activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+    }
+
+
+    private void showChromecastDeviceList() {
+        if(!mActivity.isFinishing() && getRouterManager().getAppListener() != null) {
+            getRouterManager().getAppListener().onCastButtonClicked();
+        }
+    }
+
+    private void sendCCRecieverMessage(String args) {
+        String decodeArgs = null;
+
+        try {
+            decodeArgs = URLDecoder.decode(args, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+        getRouterManager().sendMessage(decodeArgs);
+        Log.d(getClass().getSimpleName(), "sendCCRecieverMessage : " + decodeArgs);
+        getRouterManager().sendMessage(decodeArgs);
+
+    }
+
+    private void loadCCMedia() {
+//        getRouterManager().sendMessage(jsonArgs.getString(0), jsonArgs.getString(1));
+    }
+
+    private void bindPlayerEvents() {
+
+    }
+
+    private void doNativeAction(String params) {
+        try {
+            nativeActionParams = new JSONObject(params);
+            Log.d(TAG, "doNativeAction: " + nativeActionParams.toString());
+            String actionTypeJSONValue = null;
+            actionTypeJSONValue = nativeActionParams.getString("actionType");
+            if (actionTypeJSONValue.equals(NativeActionType.OPEN_URL.toString())) {
+                String urlJSONValue = nativeActionParams.getString("url");
+                openURL(urlJSONValue);
+            } else {
+                Log.e(TAG, "Error, action type: " + nativeActionParams.getString("actionType") + " is not supported");
+            }
+
+          if (actionTypeJSONValue.equals(NativeActionType.SHARE.toString())) {
+                if (nativeActionParams.has(NativeActionType.SHARE_NETWORK.toString())) {
+                    // if (!mShareListener.onShare(videoUrl, type, videoName)){
+                    ShareManager.share(nativeActionParams, mActivity);
+                    //}
+                }
+                else{
+                    share(nativeActionParams);
+                }
+                return;
+          }
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private String buildSupportedMediaFormats() {
+        Set<KMediaFormat> supportedFormats = KPlayerController.supportedFormats(getContext());
+
+        Set<String> drmTypes = new HashSet<>();
+        Set<String> allTypes = new HashSet<>();
+
+        for (KMediaFormat format : supportedFormats) {
+            if (format.drm != null) {
+                drmTypes.add(format.shortName);
+            }
+            allTypes.add(format.shortName);
+        }
+        
+        return new Uri.Builder()
+                .appendQueryParameter("nativeSdkDrmFormats", TextUtils.join(",", drmTypes))
+                .appendQueryParameter("nativeSdkAllFormats", TextUtils.join(",", allTypes))
+                .build().getQuery();
+    }
+    
+    // Native actions
+    private void share(JSONObject shareParams) {
+//        if(mShareListener != null){
+//            try {
+//                String videoUrl = (String)shareParams.get("sharedLink");
+//                String videoName = (String)shareParams.get("videoName");
+//                ShareManager.SharingType type = ShareStrategyFactory.getType(shareParams);
+//                if (!mShareListener.onShare(videoUrl, type, videoName)){
+//                    ShareManager.share(shareParams, mActivity);
+//                }
+//            } catch (JSONException e) {
+//                e.printStackTrace();
+//            }
+//        }else {
+//            ShareManager.share(shareParams, mActivity);
+//        }
+    }
 }
