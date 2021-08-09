@@ -1,27 +1,103 @@
-name: mobsf-SAST
+# We have attempted to detect the languages in your repository. Please check
+# the `language` matrix defined below to confirm you have the correct set of
+# supported CodeQL languages.
+#
+name: "SAST"
 
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
-  #push:
-    #branches: [ master ]
-  #pull_request:
-    #branches: [ master ]
-
-  # Allows you to run this workflow manually from the Actions tab
+  push:
+    branches: [ master ]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: [ master ]
   workflow_dispatch:
+  #Actions can be scheduled as well, below is an example
+  #schedule:
+    #- cron: '18 0 * * 4'
 
 jobs:
-  mobsfscan:
+  codeql-job:
+    name: CodeQL
     runs-on: ubuntu-latest
-    name: mobsfscan code scanning
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python' ]
+        # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python' ]
+        # Learn more:
+        # https://docs.github.com/en/free-pro-team@latest/github/finding-security-vulnerabilities-and-errors-in-your-code/configuring-code-scanning#changing-the-languages-that-are-analyzed
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    # Initializes the CodeQL tools for scanning.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        languages: ${{ matrix.language }}
+        # If you wish to specify custom queries, you can do so here or in a config file.
+        # By default, queries listed here will override any specified in a config file.
+        # Prefix the list here with "+" to use these queries and those in the config file.
+        # queries: ./path/to/local/query, your-org/your-repo/queries@main
+
+    # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
+    # If this step fails, then you should remove it and run the build manually (see below)
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v1
+
+    # ℹ️ Command-line programs to run using the OS shell.
+    # 📚 https://git.io/JvXDl
+
+    # ✏️ If the Autobuild fails above, remove it and uncomment the following three lines
+    #    and modify them (or add more) to build your code if your project
+    #    uses a compiled language
+
+    #- run: |
+    #   make bootstrap
+    #   make release
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1
+      
+  psalm-job:
+    name: Psalm (PHP)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Check if composer exist
+        run: '(test -f composer.json && echo composer.json exists) || echo ''{"name": "vice/project","require": {}}'' > composer.json'
+
+      - name: Psalm
+        uses: docker://vimeo/psalm-github-actions
+        with:
+          security_analysis: true
+          report_file: results.sarif
+
+      - name: Upload Security Analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v1
+        with:
+          sarif_file: results.sarif
+          
+  mobsf-job:
+    name: Mobsf Scan (Android/iOS)
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout the code
       uses: actions/checkout@v2
+      
     - name: mobsfscan
       uses: MobSF/mobsfscan@main
       with:
         args: '. --sarif --output results.sarif || true'
+        
     - name: Upload mobsfscan report
       uses: github/codeql-action/upload-sarif@v1
       with:
