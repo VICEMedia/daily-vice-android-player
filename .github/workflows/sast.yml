@@ -74,7 +74,9 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Check if composer exist
-        run: '(test -f composer.json && echo composer.json exists) || mkdir src && echo ''{"name": "vice/project","autoload": {"psr-4": {"Vice\\\\Project\\\\": "src/"}},"require": {}}'' > composer.json' 
+        run: |
+          (test -d src && echo src exists) || mkdir src
+          (test -f composer.json && echo composer.json exists) || echo '{"name": "vice/project","autoload": {"psr-4": {"Vice\\\\Project\\\\": "src/"}},"require": {}}' > composer.json 
 
       - name: Psalm
         uses: docker://vimeo/psalm-github-actions
