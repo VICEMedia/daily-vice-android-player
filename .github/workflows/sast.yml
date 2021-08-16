@@ -66,30 +66,30 @@ jobs:
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v1
       
-  psalm-job:
-    name: Psalm (PHP)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+  #psalm-job:
+   # name: Psalm (PHP)
+    #runs-on: ubuntu-latest
+    #steps:
+     # - name: Checkout code
+      #  uses: actions/checkout@v2
 
-      - name: Check if composer exist
-        run: |
-          (test -d src && echo src exists) || mkdir src
-          (test -f composer.json && echo composer.json exists) || echo '{"name": "vice/project","autoload": {"psr-4": {"Vice\\\\Project\\\\": "src/"}},"require": {}}' > composer.json 
+      #- name: Check if composer exist
+       # run: |
+        #  (test -d src && echo src exists) || mkdir src
+         # (test -f composer.json && echo composer.json exists) || echo '{"name": "vice/project","autoload": {"psr-4": {"Vice\\\\Project\\\\": "src/"}},"require": {}}' > composer.json 
 
-      - name: Psalm
-        uses: docker://vimeo/psalm-github-actions
-        with:
-          composer_require_dev: false
-          composer_ignore_platform_reqs: false
-          security_analysis: true
-          report_file: results.sarif
+      #- name: Psalm
+       # uses: docker://vimeo/psalm-github-actions
+        #with:
+         # composer_require_dev: false
+          #composer_ignore_platform_reqs: false
+          #security_analysis: true
+          #report_file: results.sarif
 
-      - name: Upload Security Analysis results to GitHub
-        uses: github/codeql-action/upload-sarif@v1
-        with:
-          sarif_file: results.sarif
+      #- name: Upload Security Analysis results to GitHub
+       # uses: github/codeql-action/upload-sarif@v1
+        #with:
+         # sarif_file: results.sarif
           
   mobsf-job:
     name: Mobsf Scan (Android/iOS)
