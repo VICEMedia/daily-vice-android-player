@@ -41,6 +41,7 @@ jobs:
       uses: github/codeql-action/init@v1
       with:
         languages: ${{ matrix.language }}
+        queries: +security-and-quality
         # If you wish to specify custom queries, you can do so here or in a config file.
         # By default, queries listed here will override any specified in a config file.
         # Prefix the list here with "+" to use these queries and those in the config file.
@@ -73,11 +74,13 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Check if composer exist
-        run: '(test -f composer.json && echo composer.json exists) || echo ''{"name": "vice/project","require": {}}'' > composer.json'
+        run: '(test -f composer.json && echo composer.json exists) || mkdir src && echo ''{"name": "vice/project","autoload": {"psr-4": {"Vice\\\\Project\\\\": "src/"}},"require": {}}'' > composer.json' 
 
       - name: Psalm
         uses: docker://vimeo/psalm-github-actions
         with:
+          composer_require_dev: false
+          composer_ignore_platform_reqs: false
           security_analysis: true
           report_file: results.sarif
 
@@ -102,3 +105,37 @@ jobs:
       uses: github/codeql-action/upload-sarif@v1
       with:
         sarif_file: results.sarif
+  
+  kics-job:
+    runs-on: ubuntu-latest
+    name: KICS (Docker/K8s/Teraform/Ansible)
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+      - name: Mkdir results-dir
+        # make sure results dir is created
+        run: mkdir -p results-dir
+      - name: Run KICS Scan with SARIF result
+        uses: checkmarx/kics-action@v1.2
+        with:
+          path: 'Dockerfile'
+          # when provided with a directory on output_path
+          # it will generate the specified reports file named 'results.{extension}'
+          # in this example it will generate:
+          # - results-dir/results.json
+          # - results-dir/results.sarif
+          ignore_on_exit: results
+          output_path: results-dir
+          #platform_type: terraform
+          output_formats: 'json,sarif'
+          #exclude_paths: "terraform/gcp/big_data.tf,terraform/azure"
+          # seek query id in it's metadata.json
+          #exclude_queries: 0437633b-daa6-4bbc-8526-c0d2443b946e
+      - name: Show results
+        run: |
+          cat results-dir/results.sarif
+          cat results-dir/results.json
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v1
+        with:
+          sarif_file: results-dir/results.sarif
